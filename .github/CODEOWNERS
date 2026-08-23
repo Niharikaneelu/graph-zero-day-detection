@@ -1,0 +1,10 @@
+# Replace @OWNER and @MODULE_OWNER with real GitHub usernames or teams.
+# Example: @your-org/security-team
+
+* @OWNER
+
+/simulation/ @MODULE_OWNER
+/detection/ @MODULE_OWNER
+/containment/ @MODULE_OWNER
+/dashboard/ @MODULE_OWNER
+/docs/ @MODULE_OWNER
