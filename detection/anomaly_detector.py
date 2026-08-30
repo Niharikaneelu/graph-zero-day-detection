@@ -17,6 +17,25 @@ class GraphAnomalyDetector:
     # Nodes with a score at or above this value are suspicious.
     SUSPICIOUS_THRESHOLD = 0.60
 
+    def __init__(
+        self,
+        contamination: float = 0.08,
+        random_state: int = 42,
+    ) -> None:
+        """
+        Initialize the detector.
+
+        contamination and random_state are retained for compatibility
+        with the original detector interface.
+
+        The current implementation uses an explainable graph-based
+        scoring method rather than a machine-learning model.
+        """
+
+        self.contamination = contamination
+        self.random_state = random_state
+        self._baseline = None
+
     @staticmethod
     def calculate_metrics(graph: nx.Graph) -> Dict[str, Dict]:
         """
@@ -90,13 +109,9 @@ class GraphAnomalyDetector:
         change is not treated as an anomaly by itself.
         """
 
-        # A completely new node should not automatically receive
-        # a maximum anomaly score simply because it has no baseline.
         if not node_in_baseline:
             return 0.0
 
-        # If the normal value was zero and the current value is
-        # greater than zero, treat this as a maximum change.
         if baseline == 0:
             return 1.0 if current > 0 else 0.0
 
@@ -125,6 +140,7 @@ class GraphAnomalyDetector:
         """
 
         current_metrics = cls.calculate_metrics(graph)
+
         baseline_metrics = baseline["metrics"]
 
         new_edges = cls.find_new_edges(graph, baseline)
@@ -239,10 +255,6 @@ class GraphAnomalyDetector:
     def get_suspicious_nodes(results: list[Dict]) -> list:
         """
         Extract nodes classified as suspicious.
-
-        Returns:
-            A list of node names whose anomaly score meets
-            the suspicious threshold.
         """
 
         return [
@@ -250,3 +262,93 @@ class GraphAnomalyDetector:
             for result in results
             if result["status"] == "SUSPICIOUS"
         ]
+
+    # ------------------------------------------------------------------
+    # Compatibility interface
+    # ------------------------------------------------------------------
+
+    def fit(self, baseline_graphs: list[nx.Graph]) -> None:
+        """
+        Build a baseline from multiple normal graphs.
+
+        This method preserves compatibility with the original
+        detector interface:
+
+            detector = GraphAnomalyDetector()
+            detector.fit(baseline_graphs)
+            detector.detect(graph)
+
+        The baseline is constructed by combining observations from
+        all supplied normal graphs.
+        """
+
+        if not baseline_graphs:
+            raise ValueError("No baseline graphs available.")
+
+        all_nodes = set()
+        all_edges = set()
+
+        degree_values = {}
+        degree_centrality_values = {}
+        betweenness_values = {}
+
+        for graph in baseline_graphs:
+
+            metrics = self.calculate_metrics(graph)
+
+            all_nodes.update(graph.nodes())
+            all_edges.update(graph.edges())
+
+            for node, value in metrics["degree"].items():
+                degree_values.setdefault(node, []).append(value)
+
+            for node, value in metrics["degree_centrality"].items():
+                degree_centrality_values.setdefault(node, []).append(value)
+
+            for node, value in metrics["betweenness"].items():
+                betweenness_values.setdefault(node, []).append(value)
+
+        # Average the normal metric values across baseline snapshots.
+        baseline_metrics = {
+            "degree": {
+                node: sum(values) / len(values)
+                for node, values in degree_values.items()
+            },
+            "degree_centrality": {
+                node: sum(values) / len(values)
+                for node, values in degree_centrality_values.items()
+            },
+            "betweenness": {
+                node: sum(values) / len(values)
+                for node, values in betweenness_values.items()
+            },
+        }
+
+        self._baseline = {
+            "metrics": baseline_metrics,
+            "edges": all_edges,
+        }
+
+    def detect(self, graph: nx.Graph) -> Dict:
+        """
+        Compatibility wrapper for the original detector API.
+
+        Returns:
+            A dictionary containing the anomalous nodes.
+        """
+
+        if self._baseline is None:
+            raise RuntimeError(
+                "Detector must be fitted before calling detect()."
+            )
+
+        results = self.detect_anomalies(
+            graph,
+            self._baseline,
+        )
+
+        suspicious_nodes = self.get_suspicious_nodes(results)
+
+        return {
+            "anomalous_nodes": suspicious_nodes,
+        }
