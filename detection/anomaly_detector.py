@@ -1,53 +1,32 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict
 
 import networkx as nx
-import numpy as np
-from sklearn.ensemble import IsolationForest
 
 
 class GraphAnomalyDetector:
-    """Node-level anomaly detector using graph structural features."""
+    """Graph-based behavioural anomaly detector."""
 
-    def __init__(self, contamination: float = 0.08, random_state: int = 42) -> None:
-        self.model = IsolationForest(contamination=contamination, random_state=random_state)
-        self._is_fitted = False
+    @staticmethod
+    def calculate_metrics(graph: nx.Graph) -> Dict[str, Dict]:
+        """
+        Calculate structural metrics for every node.
 
-    def _extract_features(self, graph: nx.Graph) -> tuple[list[int], np.ndarray]:
-        nodes = list(graph.nodes())
-        degrees = dict(graph.degree())
-        clustering = nx.clustering(graph)
+        Returns:
+            A dictionary containing:
+            - degree
+            - degree centrality
+            - betweenness centrality
+        """
 
-        features = np.array([
-            [degrees[node], clustering[node]]
-            for node in nodes
-        ])
-        return nodes, features
+        degree = dict(graph.degree())
+        degree_centrality = nx.degree_centrality(graph)
+        betweenness = nx.betweenness_centrality(graph)
 
-    def fit(self, baseline_graphs: List[nx.Graph]) -> None:
-        all_features = []
-        for graph in baseline_graphs:
-            _, features = self._extract_features(graph)
-            if len(features) > 0:
-                all_features.append(features)
-
-        if not all_features:
-            raise ValueError("No baseline features available for training.")
-
-        dataset = np.vstack(all_features)
-        self.model.fit(dataset)
-        self._is_fitted = True
-
-    def detect(self, graph: nx.Graph) -> Dict[str, List[int]]:
-        if not self._is_fitted:
-            raise RuntimeError("Detector must be fitted before calling detect().")
-
-        nodes, features = self._extract_features(graph)
-        if len(features) == 0:
-            return {"anomalous_nodes": []}
-
-        predictions = self.model.predict(features)
-        anomalies = [node for node, pred in zip(nodes, predictions) if pred == -1]
-
-        return {"anomalous_nodes": anomalies}
+        return {
+            "degree": degree,
+            "degree_centrality": degree_centrality,
+            "betweenness": betweenness,
+        }
+    
