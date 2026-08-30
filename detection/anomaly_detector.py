@@ -8,6 +8,15 @@ import networkx as nx
 class GraphAnomalyDetector:
     """Graph-based behavioural anomaly detector."""
 
+    # Weights used to calculate the explainable anomaly score.
+    DEGREE_WEIGHT = 0.40
+    DEGREE_CENTRALITY_WEIGHT = 0.25
+    BETWEENNESS_WEIGHT = 0.25
+    NEW_EDGE_WEIGHT = 0.10
+
+    # Nodes with a score at or above this value are suspicious.
+    SUSPICIOUS_THRESHOLD = 0.60
+
     @staticmethod
     def calculate_metrics(graph: nx.Graph) -> Dict[str, Dict]:
         """
@@ -37,9 +46,8 @@ class GraphAnomalyDetector:
         """
         Build a baseline representing normal graph behaviour.
 
-        The baseline stores the graph's structural metrics and
-        communication edges so that a later graph can be compared
-        against normal behaviour.
+        The baseline stores structural metrics and communication
+        edges from a graph representing normal activity.
         """
 
         metrics = cls.calculate_metrics(graph)
@@ -58,11 +66,187 @@ class GraphAnomalyDetector:
         Find communication edges that were not present in the baseline.
 
         Returns:
-            A list of edges that exist in the current graph
-            but did not exist in the baseline graph.
+            A list of edges that exist in the current graph but
+            did not exist in the baseline graph.
         """
 
         current_edges = set(graph.edges())
         baseline_edges = baseline["edges"]
 
         return list(current_edges - baseline_edges)
+
+    @staticmethod
+    def _relative_change(
+        current: float,
+        baseline: float,
+        node_in_baseline: bool = True,
+    ) -> float:
+        """
+        Calculate the relative increase from a baseline value.
+
+        The result is limited to the range 0.0 to 1.0.
+
+        If the node did not exist in the baseline, its structural
+        change is not treated as an anomaly by itself.
+        """
+
+        # A completely new node should not automatically receive
+        # a maximum anomaly score simply because it has no baseline.
+        if not node_in_baseline:
+            return 0.0
+
+        # If the normal value was zero and the current value is
+        # greater than zero, treat this as a maximum change.
+        if baseline == 0:
+            return 1.0 if current > 0 else 0.0
+
+        change = (current - baseline) / baseline
+
+        # Only increases contribute to the anomaly score.
+        return min(max(change, 0.0), 1.0)
+
+    @classmethod
+    def detect_anomalies(
+        cls,
+        graph: nx.Graph,
+        baseline: Dict,
+    ) -> list[Dict]:
+        """
+        Compare the current graph against the baseline.
+
+        Each node receives an explainable anomaly score based on:
+        - degree change
+        - degree centrality change
+        - betweenness centrality change
+        - new communication edges
+
+        Returns:
+            A list containing one result dictionary per node.
+        """
+
+        current_metrics = cls.calculate_metrics(graph)
+        baseline_metrics = baseline["metrics"]
+
+        new_edges = cls.find_new_edges(graph, baseline)
+
+        # Find nodes involved in newly observed communication.
+        nodes_with_new_edges = set()
+
+        for source, target in new_edges:
+            nodes_with_new_edges.add(source)
+            nodes_with_new_edges.add(target)
+
+        results = []
+
+        for node in graph.nodes():
+
+            # Current metrics.
+            current_degree = current_metrics["degree"].get(node, 0)
+
+            current_degree_centrality = current_metrics[
+                "degree_centrality"
+            ].get(node, 0.0)
+
+            current_betweenness = current_metrics[
+                "betweenness"
+            ].get(node, 0.0)
+
+            # Baseline metrics.
+            baseline_degree = baseline_metrics["degree"].get(node, 0)
+
+            baseline_degree_centrality = baseline_metrics[
+                "degree_centrality"
+            ].get(node, 0.0)
+
+            baseline_betweenness = baseline_metrics[
+                "betweenness"
+            ].get(node, 0.0)
+
+            # Check whether this node existed in normal behaviour.
+            node_in_baseline = node in baseline_metrics["degree"]
+
+            # Calculate changes from baseline.
+            degree_change = cls._relative_change(
+                current_degree,
+                baseline_degree,
+                node_in_baseline,
+            )
+
+            degree_centrality_change = cls._relative_change(
+                current_degree_centrality,
+                baseline_degree_centrality,
+                node_in_baseline,
+            )
+
+            betweenness_change = cls._relative_change(
+                current_betweenness,
+                baseline_betweenness,
+                node_in_baseline,
+            )
+
+            # New communication signal.
+            new_edge_signal = (
+                1.0 if node in nodes_with_new_edges else 0.0
+            )
+
+            # Weighted anomaly score.
+            anomaly_score = (
+                cls.DEGREE_WEIGHT * degree_change
+                + cls.DEGREE_CENTRALITY_WEIGHT
+                * degree_centrality_change
+                + cls.BETWEENNESS_WEIGHT
+                * betweenness_change
+                + cls.NEW_EDGE_WEIGHT * new_edge_signal
+            )
+
+            # Keep score between 0 and 1.
+            anomaly_score = min(max(anomaly_score, 0.0), 1.0)
+
+            # Generate human-readable reasons.
+            reasons = []
+
+            if degree_change > 0:
+                reasons.append("degree increased")
+
+            if degree_centrality_change > 0:
+                reasons.append("degree centrality increased")
+
+            if betweenness_change > 0:
+                reasons.append("betweenness centrality increased")
+
+            if node in nodes_with_new_edges:
+                reasons.append("new communication edge detected")
+
+            # Determine final status.
+            status = (
+                "SUSPICIOUS"
+                if anomaly_score >= cls.SUSPICIOUS_THRESHOLD
+                else "NORMAL"
+            )
+
+            results.append(
+                {
+                    "node": node,
+                    "anomaly_score": round(anomaly_score, 2),
+                    "reasons": reasons,
+                    "status": status,
+                }
+            )
+
+        return results
+
+    @staticmethod
+    def get_suspicious_nodes(results: list[Dict]) -> list:
+        """
+        Extract nodes classified as suspicious.
+
+        Returns:
+            A list of node names whose anomaly score meets
+            the suspicious threshold.
+        """
+
+        return [
+            result["node"]
+            for result in results
+            if result["status"] == "SUSPICIOUS"
+        ]
