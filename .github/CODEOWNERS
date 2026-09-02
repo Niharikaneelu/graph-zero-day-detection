@@ -1,10 +1,12 @@
 # Team owners
 # TODO: add member 2 GitHub username when available.
 
-* @Niharikaneelu @Rithika-Sankar-006 @meenakshi17-ooo
+* @Niharikaneelu @Rithika-Sankar-006 @meenakshi17-ooo @ashik-pn
 
 /simulation/ @Niharikaneelu
-#/detection/ 
+/detection/ @ashik-pn
 /containment/ @meenakshi17-ooo
 /dashboard/ @Rithika-Sankar-006
-/docs/ @Niharikaneelu @Rithika-Sankar-006 @meenakshi17-ooo
+/docs/ @Niharikaneelu @Rithika-Sankar-006 @meenakshi17-ooo @ashik-pn
+/tests/ @Niharikaneelu @Rithika-Sankar-006 @meenakshi17-ooo @ashik-pn
+/data\sample/ @Niharikaneelu @Rithika-Sankar-006 @meenakshi17-ooo @ashik-pn
