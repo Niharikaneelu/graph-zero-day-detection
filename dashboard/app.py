@@ -36,7 +36,7 @@ def get_node_type(graph, node):
 # =========================================================
 
 def create_network_figure(graph, anomalous_nodes):
-    """Create an interactive Plotly visualization."""
+    """Create an interactive Plotly visualization of the graph."""
 
     if graph.number_of_nodes() == 0:
         return go.Figure()
@@ -60,45 +60,25 @@ def create_network_figure(graph, anomalous_nodes):
         x0, y0 = positions[source]
         x1, y1 = positions[target]
 
-        edge_x.extend([
-            x0,
-            x1,
-            None
-        ])
-
-        edge_y.extend([
-            y0,
-            y1,
-            None
-        ])
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
 
     edge_trace = go.Scatter(
         x=edge_x,
         y=edge_y,
         mode="lines",
         line=dict(width=1),
-        hoverinfo="none"
+        hoverinfo="none",
     )
 
     # -----------------------------------------------------
-    # NODE DATA
+    # NODES
     # -----------------------------------------------------
 
     node_x = []
     node_y = []
     node_text = []
     node_colors = []
-    node_symbols = []
-
-    # Plotly marker symbols
-    type_symbols = {
-        "user": "circle",
-        "host": "square",
-        "process": "diamond",
-        "file": "triangle-up",
-        "server": "star",
-        "external": "hexagon"
-    }
 
     for node in graph.nodes():
 
@@ -112,42 +92,14 @@ def create_network_figure(graph, anomalous_nodes):
             node
         )
 
-        node_type_lower = node_type.lower()
-
         degree = graph.degree(node)
 
-        # -------------------------------------------------
-        # NODE SYMBOL
-        # -------------------------------------------------
-
-        symbol = "circle"
-
-        for type_name, type_symbol in type_symbols.items():
-
-            if type_name in node_type_lower:
-
-                symbol = type_symbol
-                break
-
-        node_symbols.append(symbol)
-
-        # -------------------------------------------------
-        # NODE STATUS
-        # -------------------------------------------------
-
         if node in anomalous_set:
-
             node_colors.append("red")
             status = "SUSPICIOUS"
-
         else:
-
             node_colors.append("blue")
             status = "NORMAL"
-
-        # -------------------------------------------------
-        # HOVER INFORMATION
-        # -------------------------------------------------
 
         node_text.append(
             f"Node: {node}<br>"
@@ -156,31 +108,22 @@ def create_network_figure(graph, anomalous_nodes):
             f"Status: {status}"
         )
 
-    # -----------------------------------------------------
-    # NODE TRACE
-    # -----------------------------------------------------
-
     node_trace = go.Scatter(
         x=node_x,
         y=node_y,
         mode="markers+text",
-
         text=[
             str(node)
             for node in graph.nodes()
         ],
-
         textposition="top center",
-
         hovertext=node_text,
         hoverinfo="text",
-
         marker=dict(
             size=18,
             color=node_colors,
-            symbol=node_symbols,
-            line=dict(width=1)
-        )
+            line=dict(width=1),
+        ),
     )
 
     # -----------------------------------------------------
@@ -196,45 +139,39 @@ def create_network_figure(graph, anomalous_nodes):
 
     figure.update_layout(
         title="Behavioural Network Graph",
-
         showlegend=False,
-
         hovermode="closest",
-
         margin=dict(
             l=10,
             r=10,
             t=50,
             b=10
         ),
-
         xaxis=dict(
             showgrid=False,
             zeroline=False,
-            showticklabels=False
+            showticklabels=False,
         ),
-
         yaxis=dict(
             showgrid=False,
             zeroline=False,
-            showticklabels=False
+            showticklabels=False,
         ),
-
-        height=650
+        height=650,
     )
 
     return figure
 
 
 # =========================================================
-# MAIN DASHBOARD
+# MAIN APPLICATION
 # =========================================================
 
 def run():
 
-    # =====================================================
+    # -----------------------------------------------------
     # PAGE CONFIGURATION
-    # =====================================================
+    # -----------------------------------------------------
 
     st.set_page_config(
         page_title="Graph Zero-Day Detection",
@@ -245,28 +182,22 @@ def run():
         "Graph Zero-Day Detection Dashboard"
     )
 
-    st.caption(
-        "Graph-based behavioural anomaly detection "
-        "and containment framework"
-    )
-
-    # =====================================================
+    # -----------------------------------------------------
     # SIMULATION
-    # =====================================================
+    # -----------------------------------------------------
 
     simulator = AttackGraphSimulator(
         seed=7
     )
 
-    # Generate 20 normal baseline graphs
     baseline_graphs = [
         simulator.generate_normal_snapshot()
         for _ in range(20)
     ]
 
-    # =====================================================
-    # ANOMALY DETECTOR
-    # =====================================================
+    # -----------------------------------------------------
+    # DETECTOR
+    # -----------------------------------------------------
 
     detector = GraphAnomalyDetector(
         contamination=0.1
@@ -276,160 +207,50 @@ def run():
         baseline_graphs
     )
 
-    # Generate graph to analyse
     graph = simulator.generate_normal_snapshot()
 
-    # Inject simulated zero-day behaviour
     injected_nodes = (
         simulator.inject_zero_day_pattern(
             graph
         )
     )
 
-    # Detect anomalous nodes
+    # -----------------------------------------------------
+    # ACTUAL DETECTION
+    # -----------------------------------------------------
+
     detection = detector.detect(
         graph
     )
 
-    anomalous_nodes = (
-        detection["anomalous_nodes"]
+    anomalous_nodes = detection[
+        "anomalous_nodes"
+    ]
+
+    detailed_results = detector.detect_anomalies(
+        graph,
+        detector._baseline
     )
 
-    # =====================================================
-    # CONTAINMENT
-    # =====================================================
+    # -----------------------------------------------------
+    # ACTUAL CONTAINMENT
+    # -----------------------------------------------------
 
-    engine = ContainmentEngine()
+    engine = ContainmentEngine(
+        graph
+    )
 
-    actions = engine.generate_actions(
+    containment_plan = engine.generate_containment_plan(
+        graph,
         anomalous_nodes
     )
 
-    # =====================================================
-    # TEMPORARY ANOMALY INFORMATION
-    # =====================================================
-
-    # Temporary dummy information for dashboard development.
-    # Later this can be replaced by actual detector output.
-
-    dummy_anomaly_info = {
-
-        14: {
-            "anomaly_score": 0.71,
-            "reasons":
-                "Unusual graph behaviour"
-        },
-
-        21: {
-            "anomaly_score": 0.76,
-            "reasons":
-                "Degree increased"
-        },
-
-        22: {
-            "anomaly_score": 0.69,
-            "reasons":
-                "New communication detected"
-        },
-
-        30: {
-            "anomaly_score": 0.84,
-            "reasons":
-                "Unusual connectivity pattern"
-        },
-
-        40: {
-            "anomaly_score": 0.92,
-            "reasons":
-                "Degree increased; "
-                "new communication"
-        },
-
-        41: {
-            "anomaly_score": 0.88,
-            "reasons":
-                "Unexpected network communication"
-        },
-
-        42: {
-            "anomaly_score": 0.95,
-            "reasons":
-                "Abnormal process behaviour"
-        }
-    }
+    actions = containment_plan[
+        "containment_actions"
+    ]
 
     # =====================================================
-    # FILTERS
-    # =====================================================
-
-    st.sidebar.header(
-        "Dashboard Filters"
-    )
-
-    # -----------------------------------------------------
-    # STATUS FILTER
-    # -----------------------------------------------------
-
-    status_filter = st.sidebar.selectbox(
-        "Node Status",
-        [
-            "All",
-            "Suspicious Only"
-        ]
-    )
-
-    # -----------------------------------------------------
-    # ANOMALY SCORE FILTER
-    # -----------------------------------------------------
-
-    minimum_score = st.sidebar.slider(
-        "Minimum Anomaly Score",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.0,
-        step=0.05
-    )
-
-    # =====================================================
-    # FILTER SUSPICIOUS NODES
-    # =====================================================
-
-    filtered_anomalous_nodes = []
-
-    for node in anomalous_nodes:
-
-        info = dummy_anomaly_info.get(
-            node,
-            {
-                "anomaly_score": 0.75,
-                "reasons":
-                    "Behaviour differs from baseline"
-            }
-        )
-
-        score = info[
-            "anomaly_score"
-        ]
-
-        # Apply anomaly score filter
-        if score < minimum_score:
-            continue
-
-        # Apply status filter
-        if status_filter == "Suspicious Only":
-
-            filtered_anomalous_nodes.append(
-                node
-            )
-
-        else:
-
-            filtered_anomalous_nodes.append(
-                node
-            )
-
-    # =====================================================
-    # SYSTEM OVERVIEW
+    # SUMMARY METRICS
     # =====================================================
 
     st.subheader(
@@ -439,38 +260,32 @@ def run():
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
-
         st.metric(
             "Total Nodes",
             graph.number_of_nodes()
         )
 
     with c2:
-
         st.metric(
             "Total Edges",
             graph.number_of_edges()
         )
 
     with c3:
-
         st.metric(
             "Suspicious Nodes",
             len(anomalous_nodes)
         )
 
     with c4:
-
         st.metric(
-            "Filtered Nodes",
-            len(filtered_anomalous_nodes)
+            "Injected Nodes",
+            len(injected_nodes)
         )
 
     # =====================================================
     # SIMULATION / DETECTION
     # =====================================================
-
-    st.divider()
 
     c1, c2 = st.columns(2)
 
@@ -481,17 +296,16 @@ def run():
         )
 
         st.write(
-            f"**Injected nodes:** "
-            f"{injected_nodes}"
+            f"Injected nodes: {injected_nodes}"
         )
 
         st.write(
-            f"**Total nodes:** "
+            f"Total nodes: "
             f"{graph.number_of_nodes()}"
         )
 
         st.write(
-            f"**Total edges:** "
+            f"Total edges: "
             f"{graph.number_of_edges()}"
         )
 
@@ -502,28 +316,16 @@ def run():
         )
 
         st.write(
-            f"**Anomalous nodes:** "
+            f"Anomalous nodes: "
             f"{anomalous_nodes}"
         )
 
-        st.write(
-            f"**Detected anomalies:** "
-            f"{len(anomalous_nodes)}"
-        )
-
     # =====================================================
-    # BEHAVIOURAL NETWORK GRAPH
+    # NETWORK GRAPH
     # =====================================================
-
-    st.divider()
 
     st.subheader(
         "Behavioural Network Graph"
-    )
-
-    st.write(
-        "Red nodes represent suspicious nodes. "
-        "Blue nodes represent normal nodes."
     )
 
     figure = create_network_figure(
@@ -533,14 +335,12 @@ def run():
 
     st.plotly_chart(
         figure,
-        use_container_width=True
+        width="stretch"
     )
 
     # =====================================================
     # SUSPICIOUS NODES
     # =====================================================
-
-    st.divider()
 
     st.subheader(
         "Suspicious Nodes"
@@ -548,29 +348,35 @@ def run():
 
     suspicious_data = []
 
-    for node in filtered_anomalous_nodes:
+    for result in detailed_results:
 
-        info = dummy_anomaly_info.get(
-            node,
-            {
-                "anomaly_score": 0.75,
-                "reasons":
-                    "Behaviour differs from baseline"
-            }
+        if result["status"] != "SUSPICIOUS":
+            continue
+
+        reasons = result.get(
+            "reasons",
+            []
         )
+
+        if reasons:
+            reason_text = "; ".join(
+                reasons
+            )
+        else:
+            reason_text = (
+                "Behaviour differs from baseline"
+            )
 
         suspicious_data.append(
             {
-                "Node": node,
-
-                "Anomaly Score":
-                    info["anomaly_score"],
-
-                "Reasons":
-                    info["reasons"],
-
-                "Status":
-                    "SUSPICIOUS"
+                "Node": result["node"],
+                "Anomaly Score": result[
+                    "anomaly_score"
+                ],
+                "Reasons": reason_text,
+                "Status": result[
+                    "status"
+                ],
             }
         )
 
@@ -580,240 +386,345 @@ def run():
 
     if not suspicious_df.empty:
 
+        suspicious_df = (
+            suspicious_df
+            .sort_values(
+                by="Anomaly Score",
+                ascending=False
+            )
+            .reset_index(drop=True)
+        )
+
         st.dataframe(
             suspicious_df,
-            use_container_width=True,
-            hide_index=True
+            width="stretch",
+            hide_index=True,
         )
 
     else:
 
         st.info(
-            "No suspicious nodes match the selected filters."
+            "No suspicious nodes detected."
         )
 
     # =====================================================
     # GRAPH METRICS
     # =====================================================
 
-    st.divider()
-
     st.subheader(
         "Graph Metrics"
     )
 
-    # Calculate betweenness centrality
-    betweenness = (
-        nx.betweenness_centrality(
-            graph
-        )
+    degree = dict(
+        graph.degree()
     )
 
-    # -----------------------------------------------------
-    # BASELINE DEGREE
-    # -----------------------------------------------------
+    degree_centrality = (
+        nx.degree_centrality(graph)
+    )
 
-    baseline_degree_values = {}
+    betweenness = (
+        nx.betweenness_centrality(graph)
+    )
 
-    for baseline_graph in baseline_graphs:
+    anomaly_score_lookup = {
+        result["node"]: result[
+            "anomaly_score"
+        ]
+        for result in detailed_results
+    }
 
-        for node in baseline_graph.nodes():
+    metric_data = []
 
-            degree = baseline_graph.degree(
-                node
-            )
+    for node in anomalous_nodes:
 
-            if node not in baseline_degree_values:
-
-                baseline_degree_values[node] = []
-
-            baseline_degree_values[node].append(
-                degree
-            )
-
-    # -----------------------------------------------------
-    # METRICS TABLE
-    # -----------------------------------------------------
-
-    metrics_data = []
-
-    for node in filtered_anomalous_nodes:
-
-        current_degree = graph.degree(
-            node
-        )
-
-        if node in baseline_degree_values:
-
-            average_baseline_degree = (
-                sum(
-                    baseline_degree_values[node]
-                )
-                /
-                len(
-                    baseline_degree_values[node]
-                )
-            )
-
-        else:
-
-            average_baseline_degree = 0
-
-        degree_change = (
-            current_degree
-            - average_baseline_degree
-        )
-
-        info = dummy_anomaly_info.get(
-            node,
+        metric_data.append(
             {
-                "anomaly_score": 0.75
-            }
-        )
-
-        metrics_data.append(
-            {
-                "Node":
+                "Node": node,
+                "Degree": degree.get(
                     node,
-
-                "Degree":
-                    current_degree,
-
-                "Baseline Degree":
-                    round(
-                        average_baseline_degree,
-                        2
+                    0
+                ),
+                "Degree Centrality": round(
+                    degree_centrality.get(
+                        node,
+                        0.0
                     ),
-
-                "Degree Change":
-                    round(
-                        degree_change,
-                        2
+                    4
+                ),
+                "Betweenness Centrality": round(
+                    betweenness.get(
+                        node,
+                        0.0
                     ),
-
-                "Betweenness Centrality":
-                    round(
-                        betweenness.get(
-                            node,
-                            0
-                        ),
-                        4
-                    ),
-
-                "Anomaly Score":
-                    info[
-                        "anomaly_score"
-                    ]
+                    4
+                ),
+                "Anomaly Score": anomaly_score_lookup.get(
+                    node,
+                    0.0
+                ),
             }
         )
 
     metrics_df = pd.DataFrame(
-        metrics_data
+        metric_data
     )
 
     if not metrics_df.empty:
 
-        st.dataframe(
-            metrics_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-    else:
-
-        st.info(
-            "No graph metrics match the selected filters."
-        )
-
-    # =====================================================
-    # ARTICULATION POINTS
-    # =====================================================
-
-    st.divider()
-
-    st.subheader(
-        "Articulation Points"
-    )
-
-    if graph.number_of_nodes() > 0:
-
-        articulation_points = list(
-            nx.articulation_points(
-                graph
+        metrics_df = (
+            metrics_df
+            .sort_values(
+                by="Anomaly Score",
+                ascending=False
             )
-        )
-
-    else:
-
-        articulation_points = []
-
-    if articulation_points:
-
-        st.write(
-            articulation_points
-        )
-
-    else:
-
-        st.info(
-            "No articulation points detected."
-        )
-
-    # =====================================================
-    # BRIDGES
-    # =====================================================
-
-    st.subheader(
-        "Bridges"
-    )
-
-    if graph.number_of_edges() > 0:
-
-        bridges = list(
-            nx.bridges(
-                graph
-            )
-        )
-
-    else:
-
-        bridges = []
-
-    if bridges:
-
-        bridge_df = pd.DataFrame(
-            bridges,
-            columns=[
-                "Source",
-                "Target"
-            ]
+            .reset_index(drop=True)
         )
 
         st.dataframe(
-            bridge_df,
-            use_container_width=True,
-            hide_index=True
+            metrics_df,
+            width="stretch",
+            hide_index=True,
         )
 
     else:
 
         st.info(
-            "No bridges detected."
+            "No graph metrics available."
         )
 
     # =====================================================
     # CONTAINMENT RECOMMENDATION
     # =====================================================
 
-    st.divider()
-
     st.subheader(
         "Containment Recommendation"
     )
 
+    # -----------------------------------------------------
+    # SUSPICIOUS REGION
+    # -----------------------------------------------------
+
     st.write(
-        "Containment actions are generated based "
-        "on the detected anomalous nodes."
+        "**Suspicious Region**"
+    )
+
+    suspicious_region = containment_plan.get(
+        "suspicious_nodes",
+        []
+    )
+
+    if suspicious_region:
+
+        suspicious_region_text = ", ".join(
+            str(node)
+            for node in suspicious_region
+        )
+
+        st.info(
+            suspicious_region_text
+        )
+
+    else:
+
+        st.info(
+            "No suspicious region identified."
+        )
+
+    # -----------------------------------------------------
+    # RECOMMENDED CUT EDGES
+    # -----------------------------------------------------
+
+    st.write(
+        "**Recommended Cut Edges**"
+    )
+
+    recommended_edges = containment_plan.get(
+        "recommended_edges",
+        []
+    )
+
+    if recommended_edges:
+
+        edge_data = []
+
+        for edge in recommended_edges:
+
+            if len(edge) >= 2:
+
+                edge_data.append(
+                    {
+                        "Source": edge[0],
+                        "Target": edge[1],
+                    }
+                )
+
+        if edge_data:
+
+            edge_df = pd.DataFrame(
+                edge_data
+            )
+
+            st.dataframe(
+                edge_df,
+                width="stretch",
+                hide_index=True,
+            )
+
+        else:
+
+            st.info(
+                "No recommended cut edges."
+            )
+
+    else:
+
+        st.info(
+            "No recommended cut edges."
+        )
+
+    # -----------------------------------------------------
+    # ARTICULATION POINTS
+    # -----------------------------------------------------
+
+    st.write(
+        "**Articulation Points**"
+    )
+
+    articulation_points = containment_plan.get(
+        "articulation_points",
+        []
+    )
+
+    if articulation_points:
+
+        articulation_text = ", ".join(
+            str(node)
+            for node in articulation_points
+        )
+
+        st.info(
+            articulation_text
+        )
+
+    else:
+
+        st.info(
+            "No articulation points identified."
+        )
+
+    # -----------------------------------------------------
+    # BRIDGES
+    # -----------------------------------------------------
+
+    st.write(
+        "**Bridges**"
+    )
+
+    bridges = containment_plan.get(
+        "bridges",
+        []
+    )
+
+    if bridges:
+
+        bridge_data = []
+
+        for bridge in bridges:
+
+            if len(bridge) >= 2:
+
+                bridge_data.append(
+                    {
+                        "Source": bridge[0],
+                        "Target": bridge[1],
+                    }
+                )
+
+        if bridge_data:
+
+            bridge_df = pd.DataFrame(
+                bridge_data
+            )
+
+            st.dataframe(
+                bridge_df,
+                width="stretch",
+                hide_index=True,
+            )
+
+        else:
+
+            st.info(
+                "No bridges identified."
+            )
+
+    else:
+
+        st.info(
+            "No bridges identified."
+        )
+
+    # -----------------------------------------------------
+    # NUMBER OF EDGES REMOVED
+    # -----------------------------------------------------
+
+    number_of_edges_removed = containment_plan.get(
+        "number_of_edges_removed",
+        0
+    )
+
+    st.metric(
+        "Recommended Edges to Remove",
+        number_of_edges_removed
+    )
+
+    # -----------------------------------------------------
+    # ISOLATION STATUS
+    # -----------------------------------------------------
+
+    isolated = containment_plan.get(
+        "isolated",
+        False
+    )
+
+    if isolated:
+
+        st.success(
+            "Suspicious region can be isolated from the trusted region."
+        )
+
+    else:
+
+        st.warning(
+            "Complete isolation was not confirmed."
+        )
+
+    # -----------------------------------------------------
+    # EXPLANATION
+    # -----------------------------------------------------
+
+    explanation = containment_plan.get(
+        "explanation",
+        ""
+    )
+
+    if explanation:
+
+        st.write(
+            "**Why this containment is recommended:**"
+        )
+
+        st.info(
+            explanation
+        )
+
+    # =====================================================
+    # CONTAINMENT ACTIONS
+    # =====================================================
+
+    st.write(
+        "**Containment Actions**"
     )
 
     if actions:
@@ -826,31 +737,19 @@ def run():
 
         st.dataframe(
             action_df,
-            use_container_width=True,
-            hide_index=True
+            width="stretch",
+            hide_index=True,
         )
 
     else:
 
         st.info(
-            "No containment actions recommended."
+            "No containment actions required."
         )
-
-    # =====================================================
-    # CONTAINMENT EXPLANATION
-    # =====================================================
-
-    st.info(
-        "The containment recommendation is based on "
-        "the simulated behavioural graph. Articulation "
-        "points identify critical nodes, while bridges "
-        "represent connections whose removal can "
-        "disconnect parts of the graph."
-    )
 
 
 # =========================================================
-# PROGRAM ENTRY POINT
+# APPLICATION ENTRY POINT
 # =========================================================
 
 if __name__ == "__main__":
