@@ -85,6 +85,25 @@ class AttackGraphSimulator:
         }
         return entity_spec
 
+    def entity_type_lookup(self) -> Dict[int, str]:
+        """Return a mapping from entity node ID to its type name.
+
+        Useful for tagging nodes on a graph built from events (via
+        `build_graph`) so downstream consumers, such as the
+        dashboard, can label and color nodes by type rather than
+        showing a generic "Node" label.
+
+        Returns:
+            Dict mapping node ID to entity type (e.g. "user", "host").
+        """
+        entities = self._create_entities()
+
+        return {
+            node_id: entity_type
+            for entity_type, node_ids in entities.items()
+            for node_id in node_ids
+        }
+
     def generate_normal_events(self, num_events: int = 8) -> List[Dict]:
         """Generate realistic normal behavior events following the Event schema.
         
@@ -223,8 +242,15 @@ class AttackGraphSimulator:
             all_nodes.add(event["source"])
             all_nodes.add(event["target"])
 
-        # Add nodes
-        graph.add_nodes_from(all_nodes)
+        # Add nodes with stable entity-type metadata so downstream
+        # consumers (especially the dashboard) can distinguish users,
+        # hosts, processes, files, servers, and external entities.
+        entity_types = self.entity_type_lookup()
+        for node in all_nodes:
+            graph.add_node(
+                node,
+                type=entity_types.get(node, "unknown"),
+            )
 
         # Add edges with event metadata
         for event in events:

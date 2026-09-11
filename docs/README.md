@@ -339,3 +339,72 @@ Open the shown local URL in your browser.
 If every module follows Sections 5 to 8 exactly, contributors can work independently with minimal merge and integration conflict.
 
 ---
+
+# 12. Methodology and Validation Results
+
+The detector builds a baseline from 20 event-based graph snapshots. Each
+snapshot uses the same fixed typed-entity population, so node IDs retain their
+meaning across snapshots. Normal events are sampled independently, while the
+test graph receives either an injected zero-day cluster or one of the event
+attack scenarios.
+
+For each node, the detector combines increases in degree, degree centrality,
+and betweenness centrality with new-edge and previously-unseen-node signals.
+Scores are clipped to the range 0 to 1, and scores at or above 0.60 are marked
+`SUSPICIOUS`. Containment uses a minimum edge cut to separate suspicious nodes
+from trusted nodes, then reports bridges and articulation points as additional
+structural context.
+
+## Graph-Theoretic Basis
+
+- **Degree-sum principle:** For every undirected graph,
+        `sum(degree(v)) = 2 * number_of_edges`. Degree changes therefore reflect
+        changes in total communication volume, while the detector attributes that
+        change to individual nodes.
+- **Centrality measures:** Degree centrality normalizes local connectivity by
+        graph size. Betweenness centrality measures how often a node lies on shortest
+        paths, helping identify newly important lateral-movement bridges.
+- **Max-Flow/Min-Cut theorem:** With capacity 1 on every real edge, the minimum
+        cut is the smallest set of connections whose removal separates suspicious
+        nodes from trusted nodes. The containment engine computes this cut and never
+        removes nodes.
+- **Menger's theorem:** The minimum number of edges separating two regions
+        equals the maximum number of edge-disjoint paths between them. More
+        independent routes therefore require a larger containment cut.
+- **Articulation points and bridges:** An articulation point increases the
+        number of connected components when removed. A bridge is an edge whose
+        removal disconnects the graph. Both are reported as high-impact context.
+
+A 100-seed validation run produced these aggregate node-level results:
+
+| Measurement | Result |
+| --- | ---: |
+| True positives | 300 |
+| False positives | 158 |
+| False negatives | 0 |
+| True negatives | 923 |
+| Precision | 65.50% |
+| Recall | 100.00% |
+| Normal-node false-positive rate | 14.62% |
+| `connection_burst` trials with at least one detection | 27/100 |
+| `unusual_external` trials with at least one detection | 100/100 |
+| `lateral_movement` trials with at least one detection | 71/100 |
+
+These results are simulation measurements, not production accuracy claims.
+
+# 13. Limitations
+
+- Entity IDs are stable only because the simulator uses a fixed synthetic
+        population. Real deployments require reliable entity identity resolution.
+- The baseline contains only 20 short snapshots and may not represent seasonal
+        or workload changes.
+- The anomaly threshold and metric weights are hand-tuned for this prototype.
+- Event graphs collapse repeated communication into one edge with attributes;
+        temporal sequence modelling is outside the current scope.
+- Detection quality varies by attack scenario, as shown by the validation
+        results, and false positives require analyst review.
+- The system detects suspicious behaviour and recommends containment; it does
+        not identify the unknown vulnerability or automatically block production
+        traffic.
+
+---
