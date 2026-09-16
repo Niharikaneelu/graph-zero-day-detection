@@ -149,6 +149,8 @@ class GraphAnomalyDetector:
         - degree centrality change
         - betweenness centrality change
         - new communication edges
+        - communication-volume change from edge weights
+        - previously unseen nodes
 
         Returns:
             A list containing one result dictionary per node.
@@ -273,10 +275,7 @@ class GraphAnomalyDetector:
                 reasons.append("betweenness centrality increased")
 
             if edge_weight_change > 0:
-                reasons.append(
-                    "communication volume increased "
-                    "(repeated contact on existing connections)"
-                )
+                reasons.append("communication volume increased")
 
             if node in nodes_with_new_edges:
                 reasons.append("new communication edge detected")

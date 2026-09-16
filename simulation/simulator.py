@@ -290,12 +290,13 @@ class AttackGraphSimulator:
         src = event["source"]
         tgt = event["target"]
         event_type = event["event_type"]
+        entity_types = self.entity_type_lookup()
 
         # Ensure nodes exist
         if src not in graph:
-            graph.add_node(src)
+            graph.add_node(src, type=entity_types.get(src, "unknown"))
         if tgt not in graph:
-            graph.add_node(tgt)
+            graph.add_node(tgt, type=entity_types.get(tgt, "unknown"))
 
         # Add or update edge
         if graph.has_edge(src, tgt):

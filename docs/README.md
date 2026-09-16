@@ -362,8 +362,8 @@ structural context.
 
 - **Degree-sum principle:** For every undirected graph,
         `sum(degree(v)) = 2 * number_of_edges`. Degree changes therefore reflect
-        changes in total communication volume, while the detector attributes that
-        change to individual nodes.
+        changes in the number of unique incident connections; weighted
+        communication volume requires the edge-weight metric described above.
 - **Centrality measures:** Degree centrality normalizes local connectivity by
         graph size. Betweenness centrality measures how often a node lies on shortest
         paths, helping identify newly important lateral-movement bridges.
@@ -388,7 +388,7 @@ A 100-seed validation run produced these aggregate node-level results:
 | True negatives | 947 |
 | Precision | 69.12% |
 | Recall | 100.00% |
-| Normal-node false-positive rate | 12.47% |
+| Normal-node false-positive rate | 12.40% |
 | `connection_burst` trials with at least one detection | 27/100 |
 | `unusual_external` trials with at least one detection | 100/100 |
 | `lateral_movement` trials with at least one detection | 71/100 |

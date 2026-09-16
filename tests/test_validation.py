@@ -88,6 +88,19 @@ def test_event_graph_nodes_include_entity_type_metadata():
     )
 
 
+def test_incremental_graph_nodes_match_batch_entity_types():
+    """Incremental updates should preserve the batch graph node metadata."""
+
+    simulator = AttackGraphSimulator(seed=7)
+    event = simulator.generate_normal_events(num_events=1)[0]
+    incremental_graph = nx.Graph()
+    simulator.update_graph(incremental_graph, event)
+    batch_graph = simulator.build_graph([event])
+
+    for node in event["source"], event["target"]:
+        assert incremental_graph.nodes[node]["type"] == batch_graph.nodes[node]["type"]
+
+
 def test_injected_nodes_are_reserved_above_known_entity_population():
     """Injected IDs must not collide with unsampled simulator entities."""
 

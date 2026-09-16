@@ -71,10 +71,7 @@ def test_repeated_contact_increases_communication_volume():
     node_one = next(result for result in results if result["node"] == 1)
 
     assert node_one["anomaly_score"] > 0
-    assert any(
-        "communication volume increased" in reason
-        for reason in node_one["reasons"]
-    )
+    assert "communication volume increased" in node_one["reasons"]
 
 
 def test_fit_treats_absent_nodes_as_zero_observations():
