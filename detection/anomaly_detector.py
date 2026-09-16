@@ -17,7 +17,7 @@ class GraphAnomalyDetector:
     EDGE_WEIGHT_WEIGHT = 0.05
 
     # Nodes with a score at or above this value are suspicious.
-    SUSPICIOUS_THRESHOLD = 0.60
+    SUSPICIOUS_THRESHOLD = 0.64
 
     def __init__(
         self,
@@ -346,25 +346,30 @@ class GraphAnomalyDetector:
         degree_centrality_values = {}
         betweenness_values = {}
         edge_weight_sum_values = {}
+        baseline_snapshot_metrics = []
 
         for graph in baseline_graphs:
 
             metrics = self.calculate_metrics(graph)
+            baseline_snapshot_metrics.append(metrics)
 
             all_nodes.update(graph.nodes())
             all_edges.update(graph.edges())
 
-            for node, value in metrics["degree"].items():
-                degree_values.setdefault(node, []).append(value)
-
-            for node, value in metrics["degree_centrality"].items():
-                degree_centrality_values.setdefault(node, []).append(value)
-
-            for node, value in metrics["betweenness"].items():
-                betweenness_values.setdefault(node, []).append(value)
-
-            for node, value in metrics["edge_weight_sum"].items():
-                edge_weight_sum_values.setdefault(node, []).append(value)
+        for metrics in baseline_snapshot_metrics:
+            for node in all_nodes:
+                degree_values.setdefault(node, []).append(
+                    metrics["degree"].get(node, 0)
+                )
+                degree_centrality_values.setdefault(node, []).append(
+                    metrics["degree_centrality"].get(node, 0.0)
+                )
+                betweenness_values.setdefault(node, []).append(
+                    metrics["betweenness"].get(node, 0.0)
+                )
+                edge_weight_sum_values.setdefault(node, []).append(
+                    metrics["edge_weight_sum"].get(node, 0.0)
+                )
 
         # Average the normal metric values across baseline snapshots.
         baseline_metrics = {

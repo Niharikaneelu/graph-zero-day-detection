@@ -86,3 +86,16 @@ def test_event_graph_nodes_include_entity_type_metadata():
         graph.nodes[node]["type"] == lookup[node]
         for node in graph.nodes()
     )
+
+
+def test_injected_nodes_are_reserved_above_known_entity_population():
+    """Injected IDs must not collide with unsampled simulator entities."""
+
+    simulator = AttackGraphSimulator(seed=7)
+    graph = simulator.build_graph(
+        simulator.generate_normal_events(num_events=1)
+    )
+
+    injected_nodes = simulator.inject_zero_day_pattern(graph)
+
+    assert min(injected_nodes) > max(simulator.entity_type_lookup())

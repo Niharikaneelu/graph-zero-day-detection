@@ -349,8 +349,11 @@ test graph receives either an injected zero-day cluster or one of the event
 attack scenarios.
 
 For each node, the detector combines increases in degree, degree centrality,
-and betweenness centrality with new-edge and previously-unseen-node signals.
-Scores are clipped to the range 0 to 1, and scores at or above 0.60 are marked
+and betweenness centrality with new-edge, previously-unseen-node, and
+communication-volume signals. Communication volume is the sum of edge weights
+incident to a node, so repeated contact on an existing edge can be anomalous
+even when the number of unique neighbours is unchanged.
+Scores are clipped to the range 0 to 1, and scores at or above 0.64 are marked
 `SUSPICIOUS`. Containment uses a minimum edge cut to separate suspicious nodes
 from trusted nodes, then reports bridges and articulation points as additional
 structural context.
@@ -380,12 +383,12 @@ A 100-seed validation run produced these aggregate node-level results:
 | Measurement | Result |
 | --- | ---: |
 | True positives | 300 |
-| False positives | 158 |
+| False positives | 134 |
 | False negatives | 0 |
-| True negatives | 923 |
-| Precision | 65.50% |
+| True negatives | 947 |
+| Precision | 69.12% |
 | Recall | 100.00% |
-| Normal-node false-positive rate | 14.62% |
+| Normal-node false-positive rate | 12.47% |
 | `connection_burst` trials with at least one detection | 27/100 |
 | `unusual_external` trials with at least one detection | 100/100 |
 | `lateral_movement` trials with at least one detection | 71/100 |

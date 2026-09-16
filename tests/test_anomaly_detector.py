@@ -54,6 +54,46 @@ def test_new_edges_are_detected():
     assert (3, 4) in new_edges or (4, 3) in new_edges
 
 
+def test_repeated_contact_increases_communication_volume():
+    """Repeated contact should raise volume without raising plain degree."""
+
+    baseline_graph = nx.Graph()
+    baseline_graph.add_edge(1, 2, weight=1)
+    baseline = GraphAnomalyDetector.build_baseline(baseline_graph)
+
+    current_graph = nx.Graph()
+    current_graph.add_edge(1, 2, weight=5)
+    results = GraphAnomalyDetector.detect_anomalies(
+        current_graph,
+        baseline,
+    )
+
+    node_one = next(result for result in results if result["node"] == 1)
+
+    assert node_one["anomaly_score"] > 0
+    assert any(
+        "communication volume increased" in reason
+        for reason in node_one["reasons"]
+    )
+
+
+def test_fit_treats_absent_nodes_as_zero_observations():
+    """A node missing from snapshots should be averaged as zero activity."""
+
+    first_graph = nx.Graph()
+    first_graph.add_edge(1, 2, weight=1)
+    second_graph = nx.Graph()
+    second_graph.add_node(1)
+
+    detector = GraphAnomalyDetector()
+    detector.fit([first_graph, second_graph])
+
+    baseline_metrics = detector.get_baseline()["metrics"]
+
+    assert baseline_metrics["degree"][2] == 0.5
+    assert baseline_metrics["edge_weight_sum"][2] == 0.5
+
+
 def test_suspicious_node_gets_higher_score():
     """A node with significant structural changes should get a higher score."""
 

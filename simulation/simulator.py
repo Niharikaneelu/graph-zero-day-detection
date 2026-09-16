@@ -45,7 +45,11 @@ class AttackGraphSimulator:
         Returns:
             List of injected node IDs.
         """
-        start_id = max(graph.nodes, default=-1) + 1
+        known_entity_ids = self.entity_type_lookup()
+        start_id = max(
+            max(graph.nodes, default=-1),
+            max(known_entity_ids, default=-1),
+        ) + 1
         new_nodes = list(range(start_id, start_id + attack_nodes))
 
         graph.add_nodes_from(new_nodes)
