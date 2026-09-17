@@ -277,6 +277,7 @@ class ContainmentEngine:
         if not valid_suspicious:
             return {
                 "suspicious_nodes": [],
+                "cut_edges": [],
                 "recommended_edges": [],
                 "containment_actions": [
                     "No suspicious nodes were detected; "
@@ -349,6 +350,7 @@ class ContainmentEngine:
 
         return {
             "suspicious_nodes": valid_suspicious,
+            "cut_edges": recommended_edges,
             "recommended_edges": recommended_edges,
             "containment_actions": actions,
             "articulation_points": articulation_points,

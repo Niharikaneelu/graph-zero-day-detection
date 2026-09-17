@@ -121,6 +121,15 @@ class TestAttackBehaviour:
         simulator.inject_zero_day_pattern(graph, attack_nodes=attack_count)
         assert graph.number_of_nodes() == initial_node_count + attack_count
 
+    def test_injected_nodes_have_unknown_type_metadata(self):
+        """Injected legacy nodes should have a stable type label."""
+        simulator = AttackGraphSimulator(seed=42)
+        graph = simulator.generate_normal_snapshot()
+        attack_nodes = simulator.inject_zero_day_pattern(graph)
+
+        for node in attack_nodes:
+            assert graph.nodes[node]["type"] == "unknown"
+
     def test_inject_zero_day_creates_cluster(self):
         """Attack nodes should form a dense cluster (fully connected)."""
         simulator = AttackGraphSimulator(seed=42)
@@ -694,6 +703,26 @@ class TestDynamicUpdates:
         
         assert 5 in graph
         assert 10 in graph
+
+    def test_update_graph_adds_missing_type_without_overwriting_type(self):
+        """Incremental updates should fill, but never replace, node types."""
+        simulator = AttackGraphSimulator(seed=42)
+        graph = nx.Graph()
+        graph.add_node(0)
+        graph.add_node(1, type="custom")
+
+        event = {
+            "timestamp": 1,
+            "source": 0,
+            "target": 1,
+            "event_type": "LOGIN",
+            "weight": 1,
+        }
+
+        simulator.update_graph(graph, event)
+
+        assert graph.nodes[0]["type"] == "user"
+        assert graph.nodes[1]["type"] == "custom"
 
     def test_update_graph_increments_weight(self):
         """update_graph should increment weight for existing edge."""
