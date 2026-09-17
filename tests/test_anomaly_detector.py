@@ -311,7 +311,8 @@ def test_node_absent_from_baseline_is_flagged_suspicious():
 
 def test_old_baseline_without_edge_weight_sum_is_supported():
     """Legacy baselines without edge-weight metrics remain usable."""
-    graph = nx.path_graph(3)
+    graph = nx.Graph()
+    graph.add_edge(1, 2, weight=5)
     baseline = {
         "metrics": {
             "degree": dict(graph.degree()),
@@ -324,6 +325,9 @@ def test_old_baseline_without_edge_weight_sum_is_supported():
     results = GraphAnomalyDetector.detect_anomalies(graph, baseline)
 
     assert len(results) == graph.number_of_nodes()
+    for result in results:
+        assert result["anomaly_score"] == 0.0
+        assert "communication volume increased" not in result["reasons"]
 def test_full_pipeline_detects_injected_zero_day_nodes():
     """
     Regression test for the end-to-end detection pipeline.

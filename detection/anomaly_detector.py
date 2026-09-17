@@ -199,6 +199,9 @@ class GraphAnomalyDetector:
                 "betweenness"
             ].get(node, 0.0)
 
+            has_edge_weight_baseline = (
+                "edge_weight_sum" in baseline_metrics
+            )
             baseline_edge_weight_sum = baseline_metrics.get(
                 "edge_weight_sum",
                 {},
@@ -231,9 +234,13 @@ class GraphAnomalyDetector:
             # keeps a flat degree but a rising edge-weight sum, which
             # is exactly the fingerprint of a connection-burst attack
             # against a small pool of targets.
-            edge_weight_change = cls._relative_change(
-                current_edge_weight_sum,
-                baseline_edge_weight_sum,
+            edge_weight_change = (
+                cls._relative_change(
+                    current_edge_weight_sum,
+                    baseline_edge_weight_sum,
+                )
+                if has_edge_weight_baseline
+                else 0.0
             )
 
             # New communication signal.
