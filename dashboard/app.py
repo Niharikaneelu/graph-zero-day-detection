@@ -305,8 +305,8 @@ def run():
         "containment_actions"
     ]
     recommended_edges = containment_plan.get(
-        "recommended_edges",
-        [],
+        "cut_edges",
+        containment_plan.get("recommended_edges", []),
     )
 
     # =====================================================
@@ -616,8 +616,8 @@ def run():
     )
 
     recommended_edges = containment_plan.get(
-        "recommended_edges",
-        []
+        "cut_edges",
+        containment_plan.get("recommended_edges", [])
     )
 
     if recommended_edges:

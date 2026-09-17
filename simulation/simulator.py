@@ -52,7 +52,10 @@ class AttackGraphSimulator:
         ) + 1
         new_nodes = list(range(start_id, start_id + attack_nodes))
 
-        graph.add_nodes_from(new_nodes)
+        graph.add_nodes_from(
+            (node_id, {"type": "unknown"})
+            for node_id in new_nodes
+        )
 
         for i in range(len(new_nodes)):
             for j in range(i + 1, len(new_nodes)):
