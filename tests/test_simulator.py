@@ -121,6 +121,15 @@ class TestAttackBehaviour:
         simulator.inject_zero_day_pattern(graph, attack_nodes=attack_count)
         assert graph.number_of_nodes() == initial_node_count + attack_count
 
+    def test_injected_nodes_have_unknown_type_metadata(self):
+        """Injected legacy nodes should have a stable type label."""
+        simulator = AttackGraphSimulator(seed=42)
+        graph = simulator.generate_normal_snapshot()
+        attack_nodes = simulator.inject_zero_day_pattern(graph)
+
+        for node in attack_nodes:
+            assert graph.nodes[node]["type"] == "unknown"
+
     def test_inject_zero_day_creates_cluster(self):
         """Attack nodes should form a dense cluster (fully connected)."""
         simulator = AttackGraphSimulator(seed=42)

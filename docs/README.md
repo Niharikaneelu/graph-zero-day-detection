@@ -130,6 +130,12 @@ Output:
 
 - Containment payload using the format in Section 8
 
+Compatibility note:
+
+- `cut_edges` is the canonical field for recommended containment edges.
+- `recommended_edges` is also returned with the same value for compatibility
+        with existing consumers.
+
 ## dashboard/
 
 Purpose:
@@ -247,6 +253,13 @@ The containment module should produce results similar to:
         ]
 }
 ```
+
+`cut_edges` is the canonical containment field consumed by the dashboard.
+During the compatibility period, `recommended_edges` is returned as an alias
+with an identical value. Consumers should migrate to `cut_edges`.
+
+Legacy nodes injected by `simulation.inject_zero_day_pattern` include the node
+attribute `type="unknown"`. Event-built nodes retain their entity type metadata.
 
 ---
 
