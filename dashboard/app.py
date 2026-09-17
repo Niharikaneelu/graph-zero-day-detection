@@ -80,6 +80,7 @@ def create_network_figure(graph, anomalous_nodes, cut_edges=None):
         y=edge_y,
         mode="lines",
         line=dict(width=1, color="#9cb8b4"),
+        showlegend=False,
         hoverinfo="none",
     )
 
@@ -89,6 +90,7 @@ def create_network_figure(graph, anomalous_nodes, cut_edges=None):
         mode="lines",
         line=dict(width=3, color="#d85f52", dash="dash"),
         name="Recommended cut",
+        showlegend=bool(cut_edge_x),
         hoverinfo="none",
     )
 
@@ -145,6 +147,7 @@ def create_network_figure(graph, anomalous_nodes, cut_edges=None):
             color=node_colors,
             line=dict(width=1),
         ),
+        showlegend=False,
     )
 
     # -----------------------------------------------------

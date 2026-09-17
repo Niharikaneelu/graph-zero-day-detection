@@ -72,6 +72,10 @@ def test_dashboard_cut_edges_are_rendered_as_a_separate_trace():
     assert cut_trace.line.dash == "dash"
     assert cut_trace.line.color == "#d85f52"
 
+    assert figure.data[0].showlegend is False
+    assert figure.data[1].showlegend is True
+    assert figure.data[2].showlegend is False
+
 
 def test_event_graph_nodes_include_entity_type_metadata():
     """Event-built graphs should expose stable entity types to the dashboard."""

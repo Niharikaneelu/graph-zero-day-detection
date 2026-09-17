@@ -14,13 +14,16 @@ Describe what this PR changes and why.
 ## Data Contract Impact
 
 - [ ] No interface changes
-- [ ] Interface changed (link to dedicated Interface Change PR/discussion)
+- [x] Interface changed: containment now returns canonical `cut_edges` while
+	retaining `recommended_edges` as a compatibility alias; simulator updates
+	add missing node `type` metadata without overwriting existing values.
 
 If changed, explain the impact on:
 
 - Event format
 - Detection output
-- Containment output
+- Containment output: `cut_edges` is canonical and equals the legacy alias
+	`recommended_edges`.
 
 ## Validation
 

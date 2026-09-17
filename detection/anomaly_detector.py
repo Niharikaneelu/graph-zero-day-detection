@@ -199,9 +199,10 @@ class GraphAnomalyDetector:
                 "betweenness"
             ].get(node, 0.0)
 
-            baseline_edge_weight_sum = baseline_metrics[
-                "edge_weight_sum"
-            ].get(node, 0.0)
+            baseline_edge_weight_sum = baseline_metrics.get(
+                "edge_weight_sum",
+                {},
+            ).get(node, 0.0)
 
             # Check whether this node existed in normal behaviour.
             node_in_baseline = node in baseline_metrics["degree"]
