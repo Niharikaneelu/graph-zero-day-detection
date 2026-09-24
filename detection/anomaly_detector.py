@@ -9,13 +9,15 @@ class GraphAnomalyDetector:
     """Graph-based behavioural anomaly detector."""
 
     # Weights used to calculate the explainable anomaly score.
-    DEGREE_WEIGHT = 0.40
-    DEGREE_CENTRALITY_WEIGHT = 0.25
-    BETWEENNESS_WEIGHT = 0.25
+    DEGREE_WEIGHT = 0.29
+    DEGREE_CENTRALITY_WEIGHT = 0.185
+    BETWEENNESS_WEIGHT = 0.185
     NEW_EDGE_WEIGHT = 0.10
+    NEW_NODE_WEIGHT = 0.19
+    EDGE_WEIGHT_WEIGHT = 0.05
 
     # Nodes with a score at or above this value are suspicious.
-    SUSPICIOUS_THRESHOLD = 0.60
+    SUSPICIOUS_THRESHOLD = 0.64
 
     def __init__(
         self,
@@ -46,6 +48,7 @@ class GraphAnomalyDetector:
             - degree
             - degree centrality
             - betweenness centrality
+            - edge weight sum (total communication volume)
         """
 
         degree = dict(graph.degree())
@@ -54,10 +57,22 @@ class GraphAnomalyDetector:
 
         betweenness = nx.betweenness_centrality(graph)
 
+        # Weighted degree: sum of the weights of every edge incident
+        # to a node. Repeated communication on the same edge (e.g. a
+        # process contacting the same host many times) raises this
+        # value even when the node's plain degree stays flat, since
+        # degree only counts *unique* neighbours. This is important
+        # for catching burst-style attacks against a small pool of
+        # targets, where unique-neighbour count saturates quickly but
+        # communication volume keeps climbing. Edges without an
+        # explicit weight attribute default to a weight of 1.
+        edge_weight_sum = dict(graph.degree(weight="weight"))
+
         return {
             "degree": degree,
             "degree_centrality": degree_centrality,
             "betweenness": betweenness,
+            "edge_weight_sum": edge_weight_sum,
         }
 
     @classmethod
@@ -98,19 +113,19 @@ class GraphAnomalyDetector:
     def _relative_change(
         current: float,
         baseline: float,
-        node_in_baseline: bool = True,
     ) -> float:
         """
         Calculate the relative increase from a baseline value.
 
         The result is limited to the range 0.0 to 1.0.
 
-        If the node did not exist in the baseline, its structural
-        change is not treated as an anomaly by itself.
+        A missing baseline value is treated as 0, so a node that
+        did not exist in the baseline but now shows any structural
+        presence (e.g. a nonzero degree) registers as a full
+        relative change. This matters because a previously unseen
+        entity appearing with real connections is itself a
+        meaningful anomaly signal, not something to be ignored.
         """
-
-        if not node_in_baseline:
-            return 0.0
 
         if baseline == 0:
             return 1.0 if current > 0 else 0.0
@@ -134,6 +149,8 @@ class GraphAnomalyDetector:
         - degree centrality change
         - betweenness centrality change
         - new communication edges
+        - communication-volume change from edge weights
+        - previously unseen nodes
 
         Returns:
             A list containing one result dictionary per node.
@@ -167,6 +184,10 @@ class GraphAnomalyDetector:
                 "betweenness"
             ].get(node, 0.0)
 
+            current_edge_weight_sum = current_metrics[
+                "edge_weight_sum"
+            ].get(node, 0.0)
+
             # Baseline metrics.
             baseline_degree = baseline_metrics["degree"].get(node, 0)
 
@@ -178,32 +199,61 @@ class GraphAnomalyDetector:
                 "betweenness"
             ].get(node, 0.0)
 
+            has_edge_weight_baseline = (
+                "edge_weight_sum" in baseline_metrics
+            )
+            baseline_edge_weight_sum = baseline_metrics.get(
+                "edge_weight_sum",
+                {},
+            ).get(node, 0.0)
+
             # Check whether this node existed in normal behaviour.
             node_in_baseline = node in baseline_metrics["degree"]
 
-            # Calculate changes from baseline.
+            # Calculate changes from baseline. A missing baseline
+            # value defaults to 0 (see the .get() calls above), so
+            # _relative_change naturally treats a previously unseen
+            # node's real activity as a full relative change.
             degree_change = cls._relative_change(
                 current_degree,
                 baseline_degree,
-                node_in_baseline,
             )
 
             degree_centrality_change = cls._relative_change(
                 current_degree_centrality,
                 baseline_degree_centrality,
-                node_in_baseline,
             )
 
             betweenness_change = cls._relative_change(
                 current_betweenness,
                 baseline_betweenness,
-                node_in_baseline,
+            )
+
+            # Communication-volume change. Distinct from degree_change:
+            # a node repeatedly contacting the same few neighbours
+            # keeps a flat degree but a rising edge-weight sum, which
+            # is exactly the fingerprint of a connection-burst attack
+            # against a small pool of targets.
+            edge_weight_change = (
+                cls._relative_change(
+                    current_edge_weight_sum,
+                    baseline_edge_weight_sum,
+                )
+                if has_edge_weight_baseline
+                else 0.0
             )
 
             # New communication signal.
             new_edge_signal = (
                 1.0 if node in nodes_with_new_edges else 0.0
             )
+
+            # Previously unseen entity signal. A node that never
+            # appeared in the baseline at all (a brand new user,
+            # host, process, etc.) is exactly the kind of thing a
+            # zero-day compromise would introduce, so this is scored
+            # explicitly rather than being silently ignored.
+            new_node_signal = 0.0 if node_in_baseline else 1.0
 
             # Weighted anomaly score.
             anomaly_score = (
@@ -213,6 +263,8 @@ class GraphAnomalyDetector:
                 + cls.BETWEENNESS_WEIGHT
                 * betweenness_change
                 + cls.NEW_EDGE_WEIGHT * new_edge_signal
+                + cls.NEW_NODE_WEIGHT * new_node_signal
+                + cls.EDGE_WEIGHT_WEIGHT * edge_weight_change
             )
 
             # Keep score between 0 and 1.
@@ -230,8 +282,17 @@ class GraphAnomalyDetector:
             if betweenness_change > 0:
                 reasons.append("betweenness centrality increased")
 
+            if edge_weight_change > 0:
+                reasons.append("communication volume increased")
+
             if node in nodes_with_new_edges:
                 reasons.append("new communication edge detected")
+
+            if new_node_signal:
+                reasons.append(
+                    "node was not present in the baseline "
+                    "(previously unseen entity)"
+                )
 
             # Determine final status.
             status = (
@@ -291,22 +352,31 @@ class GraphAnomalyDetector:
         degree_values = {}
         degree_centrality_values = {}
         betweenness_values = {}
+        edge_weight_sum_values = {}
+        baseline_snapshot_metrics = []
 
         for graph in baseline_graphs:
 
             metrics = self.calculate_metrics(graph)
+            baseline_snapshot_metrics.append(metrics)
 
             all_nodes.update(graph.nodes())
             all_edges.update(graph.edges())
 
-            for node, value in metrics["degree"].items():
-                degree_values.setdefault(node, []).append(value)
-
-            for node, value in metrics["degree_centrality"].items():
-                degree_centrality_values.setdefault(node, []).append(value)
-
-            for node, value in metrics["betweenness"].items():
-                betweenness_values.setdefault(node, []).append(value)
+        for metrics in baseline_snapshot_metrics:
+            for node in all_nodes:
+                degree_values.setdefault(node, []).append(
+                    metrics["degree"].get(node, 0)
+                )
+                degree_centrality_values.setdefault(node, []).append(
+                    metrics["degree_centrality"].get(node, 0.0)
+                )
+                betweenness_values.setdefault(node, []).append(
+                    metrics["betweenness"].get(node, 0.0)
+                )
+                edge_weight_sum_values.setdefault(node, []).append(
+                    metrics["edge_weight_sum"].get(node, 0.0)
+                )
 
         # Average the normal metric values across baseline snapshots.
         baseline_metrics = {
@@ -322,12 +392,26 @@ class GraphAnomalyDetector:
                 node: sum(values) / len(values)
                 for node, values in betweenness_values.items()
             },
+            "edge_weight_sum": {
+                node: sum(values) / len(values)
+                for node, values in edge_weight_sum_values.items()
+            },
         }
 
         self._baseline = {
             "metrics": baseline_metrics,
             "edges": all_edges,
         }
+
+    def get_baseline(self) -> Dict:
+        """Return the fitted baseline used for anomaly detection."""
+
+        if self._baseline is None:
+            raise RuntimeError(
+                "Detector must be fitted before requesting the baseline."
+            )
+
+        return self._baseline
 
     def detect(self, graph: nx.Graph) -> Dict:
         """

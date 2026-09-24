@@ -21,7 +21,9 @@ class TestBasicContainment:
         )
 
         assert result["suspicious_nodes"] == []
+        assert result["cut_edges"] == []
         assert result["recommended_edges"] == []
+        assert result["cut_edges"] == result["recommended_edges"]
         assert result["number_of_edges_removed"] == 0
 
     def test_suspicious_node_with_multiple_connections(self):
@@ -219,7 +221,9 @@ class TestContainmentOutput:
         # but it is still connected to trusted node 1.
         # Therefore edge (0, 1) must be removed.
         assert result["isolated"] is True
+        assert result["cut_edges"] == [(0, 1)]
         assert result["recommended_edges"] == [(0, 1)]
+        assert result["cut_edges"] == result["recommended_edges"]
         assert result["number_of_edges_removed"] == 1
 
     def test_small_graph(self):
@@ -235,7 +239,9 @@ class TestContainmentOutput:
         )
 
         assert result["suspicious_nodes"] == [0]
+        assert result["cut_edges"] == [(0, 1)]
         assert result["recommended_edges"] == [(0, 1)]
+        assert result["cut_edges"] == result["recommended_edges"]
         assert result["number_of_edges_removed"] == 1
         assert result["isolated"] is True
 
@@ -251,7 +257,9 @@ class TestContainmentOutput:
         )
 
         # There is no trusted region.
+        assert result["cut_edges"] == []
         assert result["recommended_edges"] == []
+        assert result["cut_edges"] == result["recommended_edges"]
         assert result["number_of_edges_removed"] == 0
         assert result["isolated"] is True
 

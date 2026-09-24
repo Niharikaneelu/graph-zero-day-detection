@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pandas as pd
 import streamlit as st
 import networkx as nx
@@ -35,7 +37,7 @@ def get_node_type(graph, node):
 # NETWORK GRAPH VISUALIZATION
 # =========================================================
 
-def create_network_figure(graph, anomalous_nodes):
+def create_network_figure(graph, anomalous_nodes, cut_edges=None):
     """Create an interactive Plotly visualization of the graph."""
 
     if graph.number_of_nodes() == 0:
@@ -47,6 +49,10 @@ def create_network_figure(graph, anomalous_nodes):
     )
 
     anomalous_set = set(anomalous_nodes)
+    cut_edge_set = {
+        frozenset(edge)
+        for edge in (cut_edges or [])
+    }
 
     # -----------------------------------------------------
     # EDGES
@@ -54,20 +60,37 @@ def create_network_figure(graph, anomalous_nodes):
 
     edge_x = []
     edge_y = []
+    cut_edge_x = []
+    cut_edge_y = []
 
     for source, target in graph.edges():
 
         x0, y0 = positions[source]
         x1, y1 = positions[target]
 
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
+        if frozenset((source, target)) in cut_edge_set:
+            cut_edge_x.extend([x0, x1, None])
+            cut_edge_y.extend([y0, y1, None])
+        else:
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
 
     edge_trace = go.Scatter(
         x=edge_x,
         y=edge_y,
         mode="lines",
-        line=dict(width=1),
+        line=dict(width=1, color="#9cb8b4"),
+        showlegend=False,
+        hoverinfo="none",
+    )
+
+    cut_edge_trace = go.Scatter(
+        x=cut_edge_x,
+        y=cut_edge_y,
+        mode="lines",
+        line=dict(width=3, color="#d85f52", dash="dash"),
+        name="Recommended cut",
+        showlegend=bool(cut_edge_x),
         hoverinfo="none",
     )
 
@@ -95,10 +118,10 @@ def create_network_figure(graph, anomalous_nodes):
         degree = graph.degree(node)
 
         if node in anomalous_set:
-            node_colors.append("red")
+            node_colors.append("#d85f52")
             status = "SUSPICIOUS"
         else:
-            node_colors.append("blue")
+            node_colors.append("#147d80")
             status = "NORMAL"
 
         node_text.append(
@@ -124,6 +147,7 @@ def create_network_figure(graph, anomalous_nodes):
             color=node_colors,
             line=dict(width=1),
         ),
+        showlegend=False,
     )
 
     # -----------------------------------------------------
@@ -133,14 +157,17 @@ def create_network_figure(graph, anomalous_nodes):
     figure = go.Figure(
         data=[
             edge_trace,
+            cut_edge_trace,
             node_trace
         ]
     )
 
     figure.update_layout(
         title="Behavioural Network Graph",
-        showlegend=False,
+        showlegend=bool(cut_edge_x),
         hovermode="closest",
+        paper_bgcolor="#f7f5ef",
+        plot_bgcolor="#f7f5ef",
         margin=dict(
             l=10,
             r=10,
@@ -182,16 +209,33 @@ def run():
         "Graph Zero-Day Detection Dashboard"
     )
 
+    attack_scenario = st.selectbox(
+        "Attack scenario",
+        [
+            "Injected zero-day cluster",
+            "connection_burst",
+            "unusual_external",
+            "lateral_movement",
+        ],
+    )
+
     # -----------------------------------------------------
     # SIMULATION
     # -----------------------------------------------------
 
+    if st.button("Generate New Simulation"):
+        st.session_state.seed = random.randint(1, 100000)
+    if "seed" not in st.session_state:
+        st.session_state.seed = 7
     simulator = AttackGraphSimulator(
-        seed=7
+        seed=st.session_state.seed
     )
 
+
     baseline_graphs = [
-        simulator.generate_normal_snapshot()
+        simulator.build_graph(
+            simulator.generate_normal_events(num_events=20)
+        )
         for _ in range(20)
     ]
 
@@ -207,13 +251,28 @@ def run():
         baseline_graphs
     )
 
-    graph = simulator.generate_normal_snapshot()
+    normal_events = simulator.generate_normal_events(num_events=20)
+    graph = simulator.build_graph(normal_events)
+    injected_nodes = []
 
-    injected_nodes = (
-        simulator.inject_zero_day_pattern(
-            graph
+    # Ground truth for the currently selected scenario. For the
+    # injected zero-day cluster this is the set of brand-new nodes;
+    # for the event-based scenarios it is the node the simulator
+    # used as the attack source. Surfacing this lets a viewer
+    # directly check the detector's output against the actual
+    # attacker, rather than taking the detection on faith.
+    ground_truth_nodes = []
+
+    if attack_scenario == "Injected zero-day cluster":
+        injected_nodes = simulator.inject_zero_day_pattern(graph)
+        ground_truth_nodes = injected_nodes
+    else:
+        attack_events = simulator.generate_attack_events(
+            scenario=attack_scenario,
+            num_events=5,
         )
-    )
+        graph = simulator.build_graph(normal_events + attack_events)
+        ground_truth_nodes = [attack_events[0]["source"]]
 
     # -----------------------------------------------------
     # ACTUAL DETECTION
@@ -229,7 +288,7 @@ def run():
 
     detailed_results = detector.detect_anomalies(
         graph,
-        detector._baseline
+        detector.get_baseline(),
     )
 
     # -----------------------------------------------------
@@ -248,6 +307,10 @@ def run():
     actions = containment_plan[
         "containment_actions"
     ]
+    recommended_edges = containment_plan.get(
+        "cut_edges",
+        containment_plan.get("recommended_edges", []),
+    )
 
     # =====================================================
     # SUMMARY METRICS
@@ -279,8 +342,8 @@ def run():
 
     with c4:
         st.metric(
-            "Injected Nodes",
-            len(injected_nodes)
+            "Ground Truth Attack Nodes",
+            len(ground_truth_nodes)
         )
 
     # =====================================================
@@ -296,7 +359,7 @@ def run():
         )
 
         st.write(
-            f"Injected nodes: {injected_nodes}"
+            f"Ground truth attack node(s): {ground_truth_nodes}"
         )
 
         st.write(
@@ -320,6 +383,21 @@ def run():
             f"{anomalous_nodes}"
         )
 
+        caught = set(ground_truth_nodes).issubset(set(anomalous_nodes))
+
+        if ground_truth_nodes:
+            if caught:
+                st.success(
+                    "All ground truth attack node(s) were detected."
+                )
+            else:
+                missed = set(ground_truth_nodes) - set(anomalous_nodes)
+                st.warning(
+                    f"Missed ground truth node(s): {sorted(missed)}. "
+                    "This attack scenario is known to be harder for "
+                    "the detector to catch reliably."
+                )
+
     # =====================================================
     # NETWORK GRAPH
     # =====================================================
@@ -330,7 +408,8 @@ def run():
 
     figure = create_network_figure(
         graph,
-        anomalous_nodes
+        anomalous_nodes,
+        recommended_edges,
     )
 
     st.plotly_chart(
@@ -540,8 +619,8 @@ def run():
     )
 
     recommended_edges = containment_plan.get(
-        "recommended_edges",
-        []
+        "cut_edges",
+        containment_plan.get("recommended_edges", [])
     )
 
     if recommended_edges:

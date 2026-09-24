@@ -45,10 +45,17 @@ class AttackGraphSimulator:
         Returns:
             List of injected node IDs.
         """
-        start_id = max(graph.nodes, default=-1) + 1
+        known_entity_ids = self.entity_type_lookup()
+        start_id = max(
+            max(graph.nodes, default=-1),
+            max(known_entity_ids, default=-1),
+        ) + 1
         new_nodes = list(range(start_id, start_id + attack_nodes))
 
-        graph.add_nodes_from(new_nodes)
+        graph.add_nodes_from(
+            (node_id, {"type": "unknown"})
+            for node_id in new_nodes
+        )
 
         for i in range(len(new_nodes)):
             for j in range(i + 1, len(new_nodes)):
@@ -84,6 +91,25 @@ class AttackGraphSimulator:
             "external": [12, 13],
         }
         return entity_spec
+
+    def entity_type_lookup(self) -> Dict[int, str]:
+        """Return a mapping from entity node ID to its type name.
+
+        Useful for tagging nodes on a graph built from events (via
+        `build_graph`) so downstream consumers, such as the
+        dashboard, can label and color nodes by type rather than
+        showing a generic "Node" label.
+
+        Returns:
+            Dict mapping node ID to entity type (e.g. "user", "host").
+        """
+        entities = self._create_entities()
+
+        return {
+            node_id: entity_type
+            for entity_type, node_ids in entities.items()
+            for node_id in node_ids
+        }
 
     def generate_normal_events(self, num_events: int = 8) -> List[Dict]:
         """Generate realistic normal behavior events following the Event schema.
@@ -223,8 +249,15 @@ class AttackGraphSimulator:
             all_nodes.add(event["source"])
             all_nodes.add(event["target"])
 
-        # Add nodes
-        graph.add_nodes_from(all_nodes)
+        # Add nodes with stable entity-type metadata so downstream
+        # consumers (especially the dashboard) can distinguish users,
+        # hosts, processes, files, servers, and external entities.
+        entity_types = self.entity_type_lookup()
+        for node in all_nodes:
+            graph.add_node(
+                node,
+                type=entity_types.get(node, "unknown"),
+            )
 
         # Add edges with event metadata
         for event in events:
@@ -260,12 +293,17 @@ class AttackGraphSimulator:
         src = event["source"]
         tgt = event["target"]
         event_type = event["event_type"]
+        entity_types = self.entity_type_lookup()
 
         # Ensure nodes exist
         if src not in graph:
-            graph.add_node(src)
+            graph.add_node(src, type=entity_types.get(src, "unknown"))
+        elif "type" not in graph.nodes[src]:
+            graph.nodes[src]["type"] = entity_types.get(src, "unknown")
         if tgt not in graph:
-            graph.add_node(tgt)
+            graph.add_node(tgt, type=entity_types.get(tgt, "unknown"))
+        elif "type" not in graph.nodes[tgt]:
+            graph.nodes[tgt]["type"] = entity_types.get(tgt, "unknown")
 
         # Add or update edge
         if graph.has_edge(src, tgt):

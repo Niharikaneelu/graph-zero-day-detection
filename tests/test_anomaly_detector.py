@@ -54,6 +54,43 @@ def test_new_edges_are_detected():
     assert (3, 4) in new_edges or (4, 3) in new_edges
 
 
+def test_repeated_contact_increases_communication_volume():
+    """Repeated contact should raise volume without raising plain degree."""
+
+    baseline_graph = nx.Graph()
+    baseline_graph.add_edge(1, 2, weight=1)
+    baseline = GraphAnomalyDetector.build_baseline(baseline_graph)
+
+    current_graph = nx.Graph()
+    current_graph.add_edge(1, 2, weight=5)
+    results = GraphAnomalyDetector.detect_anomalies(
+        current_graph,
+        baseline,
+    )
+
+    node_one = next(result for result in results if result["node"] == 1)
+
+    assert node_one["anomaly_score"] > 0
+    assert "communication volume increased" in node_one["reasons"]
+
+
+def test_fit_treats_absent_nodes_as_zero_observations():
+    """A node missing from snapshots should be averaged as zero activity."""
+
+    first_graph = nx.Graph()
+    first_graph.add_edge(1, 2, weight=1)
+    second_graph = nx.Graph()
+    second_graph.add_node(1)
+
+    detector = GraphAnomalyDetector()
+    detector.fit([first_graph, second_graph])
+
+    baseline_metrics = detector.get_baseline()["metrics"]
+
+    assert baseline_metrics["degree"][2] == 0.5
+    assert baseline_metrics["edge_weight_sum"][2] == 0.5
+
+
 def test_suspicious_node_gets_higher_score():
     """A node with significant structural changes should get a higher score."""
 
@@ -219,3 +256,114 @@ def test_event_based_simulator_detects_connection_burst():
         isinstance(node, int)
         for node in attack_graph.nodes()
     )
+
+
+def test_node_absent_from_baseline_is_flagged_suspicious():
+    """
+    Regression test.
+
+    A node that never appeared in the baseline at all (a brand new
+    entity) must be treated as suspicious once it shows real
+    activity, not silently ignored. Previously, `_relative_change`
+    zeroed out every structural signal for such nodes, capping their
+    score below the suspicious threshold no matter how connected they
+    were -- which meant genuinely new attacker-controlled nodes could
+    never be detected.
+    """
+
+    baseline_graph = nx.Graph()
+
+    baseline_graph.add_edges_from(
+        [
+            (1, 2),
+            (2, 3),
+            (3, 4),
+            (4, 1),
+        ]
+    )
+
+    baseline = GraphAnomalyDetector.build_baseline(baseline_graph)
+
+    current_graph = baseline_graph.copy()
+
+    # Node 99 never existed in the baseline at all.
+    current_graph.add_edges_from(
+        [
+            (99, 1),
+            (99, 2),
+            (99, 3),
+        ]
+    )
+
+    results = GraphAnomalyDetector.detect_anomalies(
+        current_graph,
+        baseline,
+    )
+
+    suspicious_nodes = GraphAnomalyDetector.get_suspicious_nodes(
+        results
+    )
+
+    assert 99 in suspicious_nodes
+
+
+
+
+def test_old_baseline_without_edge_weight_sum_is_supported():
+    """Legacy baselines without edge-weight metrics remain usable."""
+    graph = nx.Graph()
+    graph.add_edge(1, 2, weight=5)
+    baseline = {
+        "metrics": {
+            "degree": dict(graph.degree()),
+            "degree_centrality": nx.degree_centrality(graph),
+            "betweenness": nx.betweenness_centrality(graph),
+        },
+        "edges": set(graph.edges()),
+    }
+
+    results = GraphAnomalyDetector.detect_anomalies(graph, baseline)
+
+    assert len(results) == graph.number_of_nodes()
+    for result in results:
+        assert result["anomaly_score"] == 0.0
+        assert "communication volume increased" not in result["reasons"]
+def test_full_pipeline_detects_injected_zero_day_nodes():
+    """
+    Regression test for the end-to-end detection pipeline.
+
+    Baseline graphs are built from the event-based simulator, which
+    always draws from the same fixed population of typed entities,
+    so node identity is stable across baseline snapshots. A zero-day
+    pattern is then injected into a fresh test graph, adding nodes
+    that never appeared anywhere in the baseline. The detector must
+    flag every one of those injected nodes as anomalous.
+    """
+
+    from simulation.simulator import AttackGraphSimulator
+
+    for seed in (1, 7, 14, 21, 28):
+        simulator = AttackGraphSimulator(seed=seed)
+
+        baseline_graphs = [
+            simulator.build_graph(
+                simulator.generate_normal_events(num_events=15)
+            )
+            for _ in range(20)
+        ]
+
+        detector = GraphAnomalyDetector(contamination=0.1)
+        detector.fit(baseline_graphs)
+
+        normal_events = simulator.generate_normal_events(num_events=15)
+        test_graph = simulator.build_graph(normal_events)
+
+        injected_nodes = simulator.inject_zero_day_pattern(test_graph)
+
+        results = detector.detect(test_graph)
+        detected_nodes = set(results["anomalous_nodes"])
+
+        assert set(injected_nodes).issubset(detected_nodes), (
+            f"seed={seed}: injected nodes {injected_nodes} were not "
+            f"all detected; detector found {sorted(detected_nodes)}"
+        )
