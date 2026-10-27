@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import random
+import sys
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 import networkx as nx
 import plotly.graph_objects as go
+
+# Allow the dashboard to be launched directly with
+# `streamlit run dashboard/app.py` from the project root.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from containment.containment_engine import ContainmentEngine
 from detection.anomaly_detector import GraphAnomalyDetector
