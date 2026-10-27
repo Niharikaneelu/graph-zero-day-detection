@@ -338,6 +338,13 @@ class GraphAnomalyDetector:
                 else 1.0
             )
 
+            # Previously unseen entity signal. A node that never
+            # appeared in the baseline at all (a brand new user,
+            # host, process, etc.) is exactly the kind of thing a
+            # zero-day compromise would introduce, so this is scored
+            # explicitly rather than being silently ignored.
+            new_node_signal = 0.0 if node_in_baseline else 1.0
+
             # Weighted anomaly score.
             anomaly_score = (
                 cls.DEGREE_WEIGHT * degree_change
