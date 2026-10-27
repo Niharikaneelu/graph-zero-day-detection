@@ -270,6 +270,13 @@ class AttackGraphSimulator:
                 graph[src][tgt]["weight"] += event["weight"]
                 graph[src][tgt]["event_types"].add(event_type)
                 graph[src][tgt]["timestamps"].append(event["timestamp"])
+                source_counts = graph[src][tgt].setdefault(
+                    "source_counts",
+                    {},
+                )
+                source_counts[src] = (
+                    source_counts.get(src, 0) + event["weight"]
+                )
             else:
                 # New edge
                 graph.add_edge(
@@ -279,6 +286,7 @@ class AttackGraphSimulator:
                     weight=event["weight"],
                     event_types={event_type},
                     timestamps=[event["timestamp"]],
+                    source_counts={src: event["weight"]},
                 )
 
         return graph
@@ -310,6 +318,13 @@ class AttackGraphSimulator:
             graph[src][tgt]["weight"] += event["weight"]
             graph[src][tgt]["event_types"].add(event_type)
             graph[src][tgt]["timestamps"].append(event["timestamp"])
+            source_counts = graph[src][tgt].setdefault(
+                "source_counts",
+                {},
+            )
+            source_counts[src] = (
+                source_counts.get(src, 0) + event["weight"]
+            )
         else:
             graph.add_edge(
                 src,
@@ -318,4 +333,5 @@ class AttackGraphSimulator:
                 weight=event["weight"],
                 event_types={event_type},
                 timestamps=[event["timestamp"]],
+                source_counts={src: event["weight"]},
             )

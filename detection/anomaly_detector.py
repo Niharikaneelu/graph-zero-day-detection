@@ -9,15 +9,18 @@ class GraphAnomalyDetector:
     """Graph-based behavioural anomaly detector."""
 
     # Weights used to calculate the explainable anomaly score.
-    DEGREE_WEIGHT = 0.29
-    DEGREE_CENTRALITY_WEIGHT = 0.185
-    BETWEENNESS_WEIGHT = 0.185
+    DEGREE_WEIGHT = 0.25
+    DEGREE_CENTRALITY_WEIGHT = 0.15
+    BETWEENNESS_WEIGHT = 0.15
     NEW_EDGE_WEIGHT = 0.10
-    NEW_NODE_WEIGHT = 0.19
-    EDGE_WEIGHT_WEIGHT = 0.05
+    NEW_NODE_WEIGHT = 0.20
+    EDGE_WEIGHT_WEIGHT = 0.15
+    BURST_WEIGHT = 0.50
+    EXTERNAL_COMMUNICATION_WEIGHT = 0.45
+    LATERAL_MOVEMENT_WEIGHT = 0.40
 
     # Nodes with a score at or above this value are suspicious.
-    SUSPICIOUS_THRESHOLD = 0.64
+    SUSPICIOUS_THRESHOLD = 0.62
 
     def __init__(
         self,
@@ -37,6 +40,17 @@ class GraphAnomalyDetector:
         self.contamination = contamination
         self.random_state = random_state
         self._baseline = None
+
+    def _threshold(self) -> float:
+        """Return the configured decision threshold."""
+
+        if not 0.0 < self.contamination < 1.0:
+            raise ValueError("contamination must be between 0 and 1.")
+
+        return min(
+            max(self.SUSPICIOUS_THRESHOLD - (self.contamination - 0.08), 0.1),
+            0.95,
+        )
 
     @staticmethod
     def calculate_metrics(graph: nx.Graph) -> Dict[str, Dict]:
@@ -140,6 +154,7 @@ class GraphAnomalyDetector:
         cls,
         graph: nx.Graph,
         baseline: Dict,
+        threshold: float | None = None,
     ) -> list[Dict]:
         """
         Compare the current graph against the baseline.
@@ -159,15 +174,23 @@ class GraphAnomalyDetector:
         current_metrics = cls.calculate_metrics(graph)
 
         baseline_metrics = baseline["metrics"]
+        scoring_metrics = baseline.get("scoring_metrics", baseline_metrics)
 
         new_edges = cls.find_new_edges(graph, baseline)
 
         # Find nodes involved in newly observed communication.
         nodes_with_new_edges = set()
+        nodes_with_new_edge_sources = set()
 
         for source, target in new_edges:
             nodes_with_new_edges.add(source)
             nodes_with_new_edges.add(target)
+            source_counts = graph[source][target].get(
+                "source_counts",
+                {},
+            )
+            if source_counts:
+                nodes_with_new_edge_sources.update(source_counts)
 
         results = []
 
@@ -189,20 +212,20 @@ class GraphAnomalyDetector:
             ].get(node, 0.0)
 
             # Baseline metrics.
-            baseline_degree = baseline_metrics["degree"].get(node, 0)
+            baseline_degree = scoring_metrics["degree"].get(node, 0)
 
-            baseline_degree_centrality = baseline_metrics[
+            baseline_degree_centrality = scoring_metrics[
                 "degree_centrality"
             ].get(node, 0.0)
 
-            baseline_betweenness = baseline_metrics[
+            baseline_betweenness = scoring_metrics[
                 "betweenness"
             ].get(node, 0.0)
 
             has_edge_weight_baseline = (
-                "edge_weight_sum" in baseline_metrics
+                "edge_weight_sum" in scoring_metrics
             )
-            baseline_edge_weight_sum = baseline_metrics.get(
+            baseline_edge_weight_sum = scoring_metrics.get(
                 "edge_weight_sum",
                 {},
             ).get(node, 0.0)
@@ -243,17 +266,77 @@ class GraphAnomalyDetector:
                 else 0.0
             )
 
-            # New communication signal.
-            new_edge_signal = (
-                1.0 if node in nodes_with_new_edges else 0.0
+            # The event graph retains event types on each edge. A repeated
+            # process-communication pattern identifies the initiating process
+            # without incorrectly scoring the contacted hosts as attackers.
+            process_communication_volume = 0
+            outgoing_external_targets = set()
+            outgoing_internal_host_targets = set()
+            outgoing_network_volume = 0
+            if graph.nodes[node].get("type") == "process":
+                for neighbour in graph.neighbors(node):
+                    edge_data = graph[node][neighbour]
+                    event_types = edge_data.get("event_types", set())
+                    if "PROCESS_COMMUNICATION" in event_types:
+                        process_communication_volume += edge_data.get(
+                            "weight",
+                            1,
+                        )
+            for neighbour in graph.neighbors(node):
+                edge_data = graph[node][neighbour]
+                source_counts = edge_data.get("source_counts", {})
+                if source_counts and node not in source_counts:
+                    continue
+                event_types = edge_data.get("event_types", set())
+                if "NETWORK_CONNECTION" not in event_types:
+                    continue
+                outgoing_network_volume += source_counts.get(
+                    node,
+                    edge_data.get("weight", 1),
+                )
+                neighbour_type = graph.nodes[neighbour].get("type")
+                if neighbour_type == "external":
+                    outgoing_external_targets.add(neighbour)
+                elif neighbour_type == "host":
+                    outgoing_internal_host_targets.add(neighbour)
+
+            burst_signal = (
+                1.0 if process_communication_volume >= 3 else 0.0
             )
+            external_signal = (
+                1.0
+                if outgoing_external_targets
+                and graph.nodes[node].get("type") == "host"
+                else 0.0
+            )
+            lateral_signal = (
+                1.0
+                if (
+                    len(outgoing_internal_host_targets) >= 2
+                    and outgoing_network_volume >= 3
+                    and graph.nodes[node].get("type") == "host"
+                )
+                else 0.0
+            )
+
+            # New communication signal.
+            new_edge_signal = 1.0 if node in nodes_with_new_edges else 0.0
+            if nodes_with_new_edge_sources:
+                new_edge_signal = (
+                    1.0 if node in nodes_with_new_edge_sources else 0.0
+                )
 
             # Previously unseen entity signal. A node that never
             # appeared in the baseline at all (a brand new user,
             # host, process, etc.) is exactly the kind of thing a
             # zero-day compromise would introduce, so this is scored
             # explicitly rather than being silently ignored.
-            new_node_signal = 0.0 if node_in_baseline else 1.0
+            node_type = graph.nodes[node].get("type")
+            new_node_signal = (
+                0.0
+                if node_in_baseline or node_type == "external"
+                else 1.0
+            )
 
             # Weighted anomaly score.
             anomaly_score = (
@@ -265,6 +348,9 @@ class GraphAnomalyDetector:
                 + cls.NEW_EDGE_WEIGHT * new_edge_signal
                 + cls.NEW_NODE_WEIGHT * new_node_signal
                 + cls.EDGE_WEIGHT_WEIGHT * edge_weight_change
+                + cls.BURST_WEIGHT * burst_signal
+                + cls.EXTERNAL_COMMUNICATION_WEIGHT * external_signal
+                + cls.LATERAL_MOVEMENT_WEIGHT * lateral_signal
             )
 
             # Keep score between 0 and 1.
@@ -285,6 +371,21 @@ class GraphAnomalyDetector:
             if edge_weight_change > 0:
                 reasons.append("communication volume increased")
 
+            if burst_signal:
+                reasons.append(
+                    "repeated process communication burst detected"
+                )
+
+            if external_signal:
+                reasons.append(
+                    "host communicated with an external endpoint"
+                )
+
+            if lateral_signal:
+                reasons.append(
+                    "host made repeated connections to internal hosts"
+                )
+
             if node in nodes_with_new_edges:
                 reasons.append("new communication edge detected")
 
@@ -297,7 +398,11 @@ class GraphAnomalyDetector:
             # Determine final status.
             status = (
                 "SUSPICIOUS"
-                if anomaly_score >= cls.SUSPICIOUS_THRESHOLD
+                if anomaly_score >= (
+                    cls.SUSPICIOUS_THRESHOLD
+                    if threshold is None
+                    else threshold
+                )
                 else "NORMAL"
             )
 
@@ -398,8 +503,33 @@ class GraphAnomalyDetector:
             },
         }
 
+        # A node absent from a snapshot was not observed, so it should not
+        # lower that node's normal activity baseline.
+        observed_metrics = {
+            "degree": {},
+            "degree_centrality": {},
+            "betweenness": {},
+            "edge_weight_sum": {},
+        }
+        for node in all_nodes:
+            for metric_name, values_by_snapshot in (
+                ("degree", degree_values),
+                ("degree_centrality", degree_centrality_values),
+                ("betweenness", betweenness_values),
+                ("edge_weight_sum", edge_weight_sum_values),
+            ):
+                values = [
+                    value
+                    for value in values_by_snapshot[node]
+                    if value > 0
+                ]
+                observed_metrics[metric_name][node] = (
+                    sum(values) / len(values) if values else 0.0
+                )
+
         self._baseline = {
             "metrics": baseline_metrics,
+            "scoring_metrics": observed_metrics,
             "edges": all_edges,
         }
 
@@ -429,6 +559,7 @@ class GraphAnomalyDetector:
         results = self.detect_anomalies(
             graph,
             self._baseline,
+            threshold=self._threshold(),
         )
 
         suspicious_nodes = self.get_suspicious_nodes(results)
